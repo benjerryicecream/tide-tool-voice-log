@@ -105,10 +105,17 @@
       <input id="save-job" type="text" list="jobs-datalist" autocomplete="off" placeholder="e.g. Kalani — bathroom re-tile" enterkeyhint="next">
       <datalist id="jobs-datalist"></datalist>
       <div class="chips" id="save-chips"></div>
+      <div id="save-match" hidden></div>
+      <button class="link-btn" id="save-add-client" type="button">+ Add a client to the phone book</button>
     </div>
     <div class="field">
       <label for="save-when">Date &amp; time</label>
       <input id="save-when" type="datetime-local">
+    </div>
+    <div class="field" id="save-line-field" hidden>
+      <label for="save-line">Line</label>
+      <select id="save-line" class="input-select"></select>
+      <p class="hint">The recording does not say which of the two lines took the call. Change it if you know.</p>
     </div>
     <div class="field">
       <label for="save-transcript">Transcript <span class="label-note" id="save-transcript-note"></span></label>
@@ -133,6 +140,34 @@
     <button class="ghost-btn" id="detail-export">Export .txt</button>
   </div>
   <div class="sheet-body" id="detail-body"></div>
+</section>
+
+<!-- ============ Phone book ============ -->
+<section class="sheet" id="sheet-clients" hidden role="dialog" aria-modal="true" aria-label="Client phone book">
+  <div class="sheet-head">
+    <button class="ghost-btn" data-close="clients">Done</button>
+    <span class="sheet-title">Phone book</span>
+    <span class="sheet-spacer"></span>
+  </div>
+  <div class="sheet-body">
+    <p class="block-lede">Names and numbers, used to work out who an imported call recording is from. Stays on this device.</p>
+    <div class="block">
+      <div class="field">
+        <label for="client-name">Name</label>
+        <input id="client-name" type="text" autocomplete="off" placeholder="e.g. Ray Kalani">
+      </div>
+      <div class="field" style="margin-bottom:14px">
+        <label for="client-phone">Phone</label>
+        <input id="client-phone" type="tel" inputmode="tel" autocomplete="off" placeholder="(808) 555-1234">
+        <span class="hint" id="client-phone-hint"></span>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" id="client-save" style="min-height:50px">Add client</button>
+        <button class="btn-secondary" id="client-cancel-edit" hidden style="flex:0 1 120px">Cancel</button>
+      </div>
+    </div>
+    <div class="client-list" id="client-list"></div>
+  </div>
 </section>
 
 <!-- ============ Settings ============ -->
@@ -160,6 +195,12 @@
         <input id="set-model" type="text" autocomplete="off" spellcheck="false" placeholder="gpt-4o-mini">
       </div>
       <button class="btn-secondary" id="set-save">Save settings</button>
+    </section>
+
+    <section class="block">
+      <h3>Client phone book <span class="tag" id="pb-count">0</span></h3>
+      <p class="block-lede">Samsung names call files <em>Call_20261116_183022_8085551234.m4a</em>. When you import one, the number is matched here and the client fills itself in on the save sheet.</p>
+      <button class="btn-secondary" id="btn-phonebook">Open phone book</button>
     </section>
 
     <section class="block">

@@ -166,6 +166,61 @@
     return location.protocol === 'http:' || location.protocol === 'https:';
   };
 
+  /* ---------------------------------------------------------
+     Phone numbers and Samsung call file names
+     --------------------------------------------------------- */
+
+  /** Digits only, with a leading US country code dropped: "+1 (808) 555-1234" → "8085551234" */
+  util.phoneDigits = function (value) {
+    var d = String(value == null ? '' : value).replace(/\D/g, '');
+    if (d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
+    return d;
+  };
+
+  /** "(808) 555-1234" for a 10-digit US number, otherwise the input, tidied. */
+  util.phonePretty = function (value) {
+    var d = util.phoneDigits(value);
+    if (d.length === 10) return '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
+    return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  };
+
+  /**
+   * Samsung's call recorder writes Call_YYYYMMDD_HHMMSS_<number or contact name>.m4a
+   * Returns { samsung, fileName, date, tail, phone, contactName }.
+   * phone is a normalised 10-digit string (or ''); contactName is the name part
+   * Samsung puts in when the number is already in the phone's contacts.
+   */
+  util.parseCallFile = function (fileName) {
+    var name = String(fileName || '');
+    var base = name.replace(/\.[a-z0-9]+$/i, '');
+    var out = { samsung: false, fileName: name, date: null, tail: '', phone: '', contactName: '' };
+
+    var m = base.match(/^Call[_\-\s]?(\d{4})(\d{2})(\d{2})[_\-\s](\d{2})(\d{2})(\d{2})(?:[_\-\s](.*))?$/i);
+    if (m) {
+      out.samsung = true;
+      var d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+      if (!isNaN(d.getTime())) out.date = d.toISOString();
+      out.tail = (m[7] || '').trim();
+    } else {
+      out.tail = base;
+    }
+
+    var phoneish = /^[\d\s()+.\-]+$/;
+    if (out.tail && phoneish.test(out.tail) && util.phoneDigits(out.tail).length >= 7) {
+      out.phone = util.phoneDigits(out.tail);
+    } else if (out.samsung && out.tail && !phoneish.test(out.tail)) {
+      // Samsung stores the contact name in the file name when it knows the caller
+      out.contactName = out.tail.replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    if (!out.phone) {
+      // last resort: a number sitting anywhere in the file name
+      var num = name.match(/(?:\+?1[\s.\-]?)?\(?(\d{3})\)?[\s.\-]?(\d{3})[\s.\-]?(\d{4})/);
+      if (num) out.phone = num[1] + num[2] + num[3];
+    }
+    return out;
+  };
+
   TT.util = util;
 
   /* ---------------------------------------------------------
@@ -269,8 +324,26 @@
   var KEY = 'tt.voicelog.v1';
   var VERSION = 1;
 
+  /* Line tags. The recording itself never says which of the two lines the call
+     came in on, so every imported call starts on the business line. */
+  var LINES = [
+    { value: '2nd line (Verizon business)', short: '2nd line' },
+    { value: '1st line', short: '1st line' },
+    { value: 'Unknown', short: 'line unknown' }
+  ];
+  var DEFAULT_LINE = LINES[0].value;
+
+  function lineShort(value) {
+    for (var i = 0; i < LINES.length; i++) if (LINES[i].value === value) return LINES[i].short;
+    return value || '';
+  }
+
+  TT.LINES = LINES;
+  TT.DEFAULT_LINE = DEFAULT_LINE;
+  TT.lineShort = lineShort;
+
   function blank() {
-    return { version: VERSION, jobs: [], recordings: [], settings: { baseUrl: '', apiKey: '', model: '' } };
+    return { version: VERSION, jobs: [], recordings: [], clients: [], settings: { baseUrl: '', apiKey: '', model: '' } };
   }
 
   var state = blank();
@@ -285,7 +358,11 @@
       state = blank();
       state.jobs = Array.isArray(parsed.jobs) ? parsed.jobs : [];
       state.recordings = Array.isArray(parsed.recordings) ? parsed.recordings : [];
+      state.clients = Array.isArray(parsed.clients) ? parsed.clients : [];
       state.settings = Object.assign(state.settings, parsed.settings || {});
+      state.clients.forEach(function (c) {
+        c.phone = util.phonePretty(c.phone);
+      });
       state.recordings.forEach(function (r) {
         r.actionItems = Array.isArray(r.actionItems) ? r.actionItems : [];
       });
@@ -330,6 +407,64 @@
       var job = { id: util.uid(), name: clean, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       state.jobs.push(job);
       return job;
+    },
+
+    /* --- phone book --- */
+    clients: function () {
+      return state.clients.slice().sort(function (a, b) {
+        return util.norm(a.name).localeCompare(util.norm(b.name));
+      });
+    },
+    clientById: function (id) {
+      return state.clients.filter(function (c) { return c.id === id; })[0] || null;
+    },
+    findClientByPhone: function (phone) {
+      var d = util.phoneDigits(phone);
+      if (!d) return null;
+      return state.clients.filter(function (c) { return util.phoneDigits(c.phone) === d; })[0] || null;
+    },
+    findClientByName: function (name) {
+      var n = util.norm(name);
+      if (!n) return null;
+      return state.clients.filter(function (c) { return util.norm(c.name) === n; })[0] || null;
+    },
+    addClient: function (name, phone) {
+      var clean = String(name || '').replace(/\s+/g, ' ').trim();
+      var pretty = util.phonePretty(phone);
+      if (!clean && !pretty) return null;
+      var existing = store.findClientByPhone(phone) || (clean ? store.findClientByName(clean) : null);
+      if (existing) {
+        if (clean) existing.name = clean;
+        if (pretty) existing.phone = pretty;
+        existing.updatedAt = new Date().toISOString();
+        store.save();
+        return existing;
+      }
+      var c = {
+        id: util.uid(),
+        name: clean || pretty,
+        phone: pretty,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      state.clients.push(c);
+      store.save();
+      return c;
+    },
+    updateClient: function (id, patch) {
+      var c = store.clientById(id);
+      if (!c) return null;
+      if (patch.name !== undefined) c.name = String(patch.name || '').replace(/\s+/g, ' ').trim();
+      if (patch.phone !== undefined) c.phone = util.phonePretty(patch.phone);
+      c.updatedAt = new Date().toISOString();
+      store.save();
+      return c;
+    },
+    deleteClient: function (id) {
+      var idx = state.clients.map(function (c) { return c.id; }).indexOf(id);
+      if (idx === -1) return;
+      state.clients.splice(idx, 1);
+      store.save();
     },
 
     /* --- recordings --- */
@@ -433,6 +568,8 @@
         lines.push('================================================');
         lines.push('[' + (i + 1) + '] ' + kind + ' · ' + util.stampFull(r.createdAt) + ' · ' + util.duration(r.duration));
         lines.push('================================================');
+        if (r.kind === 'call') lines.push('Line: ' + (r.line || DEFAULT_LINE));
+        if (r.clientPhone) lines.push('Client phone: ' + r.clientPhone);
         lines.push('');
         lines.push('TRANSCRIPT');
         lines.push(r.transcript ? r.transcript.trim() : '(not transcribed yet)');
@@ -465,6 +602,8 @@
       lines.push('Type: ' + (r.kind === 'call' ? 'Call recording' : 'Voice note'));
       lines.push('Recorded: ' + util.stampFull(r.createdAt));
       lines.push('Length: ' + util.duration(r.duration));
+      if (r.kind === 'call') lines.push('Line: ' + (r.line || DEFAULT_LINE));
+      if (r.clientPhone) lines.push('Client phone: ' + r.clientPhone);
       lines.push('');
       lines.push('TRANSCRIPT');
       lines.push(r.transcript ? r.transcript.trim() : '(not transcribed yet)');
@@ -493,6 +632,7 @@
         exportedAt: new Date().toISOString(),
         settings: { baseUrl: state.settings.baseUrl, model: state.settings.model }, // never the key
         jobs: state.jobs,
+        clients: state.clients,
         recordings: state.recordings,
         audio: {}
       };
@@ -522,6 +662,22 @@
         if (!exists) {
           state.jobs.push({ id: j.id || util.uid(), name: j.name, createdAt: j.createdAt || new Date().toISOString(), updatedAt: j.updatedAt || new Date().toISOString() });
           addedJobs++;
+        }
+      });
+
+      var addedClients = 0;
+      (payload.clients || []).forEach(function (c) {
+        if (!c || !c.name) return;
+        var exists = state.clients.some(function (x) { return x.id === c.id || util.phoneDigits(x.phone) === util.phoneDigits(c.phone) && util.phoneDigits(c.phone) !== ''; });
+        if (!exists) {
+          state.clients.push({
+            id: c.id || util.uid(),
+            name: c.name,
+            phone: util.phonePretty(c.phone),
+            createdAt: c.createdAt || new Date().toISOString(),
+            updatedAt: c.updatedAt || new Date().toISOString()
+          });
+          addedClients++;
         }
       });
 
@@ -556,7 +712,7 @@
           state.settings.model = payload.settings.model || '';
         }
         store.save();
-        return { jobs: addedJobs, recordings: addedRecs, audio: addedAudio };
+        return { jobs: addedJobs, recordings: addedRecs, audio: addedAudio, clients: addedClients };
       });
     }
   };

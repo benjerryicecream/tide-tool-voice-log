@@ -6,6 +6,8 @@ Built for the AutoClaw Round 3 contest, SMB track.
 
 - **Record a voice note** on the job site — one big button, live transcript while you talk.
 - **Import a call recording** from the phone (Samsung Phone app, manual record during a call). It is transcribed **on the device** with Whisper (`whisper-tiny.en`) via transformers.js. The audio never uploads.
+- **Caller ID from the file name.** A small phone book of clients (name + number). Samsung names call files `Call_YYYYMMDD_HHMMSS_<number or name>.m4a`; on import the number is matched against the phone book and the client fills itself in. Unknown caller? One tap adds them, number pre-filled. Matching ignores spaces, dashes, brackets and a leading `+1`, so `8085551234` finds `+1 (808) 555-1234`.
+- **Line tag.** The file never says which of the two lines took the call, so every imported call starts on `2nd line (Verizon business)`, changeable on import and afterwards. It shows in the log list and in the text export.
 - **Work log** grouped by client/job, searchable across job names, transcripts and notes.
 - **Action items** per recording, checkable.
 - **Export** one job as a plain text file; back up the whole log as JSON (optionally with audio).
@@ -53,7 +55,7 @@ Double-clicking `index.html` works: recording, saving, search, playback, export,
 | Thing | Where it lives |
 |---|---|
 | Audio (webm/opus from the mic, the imported file as-is) | IndexedDB (`tide-tool-voicelog` → `audio`), keyed by recording id |
-| Jobs, transcripts, notes, action items, summaries, settings | `localStorage`, key `tt.voicelog.v1` |
+| Jobs, transcripts, notes, action items, summaries, settings, phone book | `localStorage`, key `tt.voicelog.v1` |
 | Whisper model + WASM | Browser cache, ~44 MB, downloaded once on first import |
 | App shell | Service worker cache, so the log opens with no signal |
 | Speech engine (`transformers.min.js`) | Service worker cache, so transcription still runs with no signal after the first import |
@@ -109,6 +111,25 @@ Tested on 2026-11-16 in **desktop Chrome on Windows**, 440 × 771 viewport (phon
 | 10 | Plain file open | Opened from disk (in this pane through the browser's file-scheme proxy, which blocks module and `fetch` exactly like a double-clicked page). App boots, IndexedDB and localStorage both work, recording and saving work. Whisper refuses with a readable message instead of failing silently. |
 | 11 | Broken audio | Deleting a recording removes its blob from IndexedDB, not just the row. |
 
+### Caller ID, phone book and line tag
+
+Fixtures: the three `tests/Call_2026…` files are real MP4/AAC containers, made by playing the TTS speech through `MediaRecorder` in this browser and naming them the way Samsung does. They are not files from a Samsung phone.
+
+| # | Check | Result |
+|---|---|---|
+| 12 | Phone book | Added `Ray Kalani` / `(808) 555-1234` in Settings → Phone book. Row renders, count goes to 1, survives reload. |
+| 13 | Known number | Imported `Call_20261116_183022_8085551234.m4a` (bare digits) while the book held `(808) 555-1234`. Save sheet pre-filled `Ray Kalani`, showed "Phone book: Ray Kalani · (808) 555-1234", and took the date from the file name (6:30 PM), not `lastModified`. |
+| 14 | Unknown number | Imported `Call_20261116_090512_8085559999.m4a`: no pre-fill, amber "(808) 555-9999 is not in the phone book" with **Add as client**. Tapping it opened the phone book with the number pre-filled as `(808) 555-9999`; saving returned to the save sheet with the new client filled in. |
+| 15 | Name in the file name | Imported `Call_20261115_141000_Ray Kalani.m4a`: matched by contact name, pre-filled. |
+| 16 | Line tag default | First import defaulted to `2nd line (Verizon business)`; listed as "· 2nd line" in the log. |
+| 17 | Line tag changed on import | Second import switched to `1st line` before saving; stored, listed as "· 1st line", printed as `Line: 1st line` in the job export. |
+| 18 | Line tag changed later | Changed a saved call to `Unknown` from the detail sheet: select, subtitle, list row ("· line unknown") and export all follow. |
+| 19 | Export | Downloaded the job text: every call carries `Line:` and `Client phone:`; the voice note carries neither a line nor a bogus value. |
+| 20 | Backup | JSON round-trip now also carries the phone book: 2 clients, 4 recordings, 4 audio blobs restored. |
+| 21 | Regressions | Re-ran the older checks after the change: voice note record/save, import + on-device transcription of the `.m4a` files, search (`subfloor` → Ray Kalani only, `water heater` → Manoa only), action item staying checked across a reload, offline reload from the service worker. All still pass. |
+
+Two bugs were found and fixed while testing this: the save sheet used to pre-fill the *previous* client for a call from an unknown number, and the phone-book sheet opened underneath the Settings sheet. Both were re-tested after the fix.
+
 ### Could not test — say it plainly
 
 - **A real phone microphone and a real Android session.** The mic here is a desktop input device. Levels, echo and pocket-noise behaviour on an actual job site are unverified.
@@ -121,6 +142,7 @@ Tested on 2026-11-16 in **desktop Chrome on Windows**, 440 × 771 viewport (phon
 ### Known limits
 
 - `whisper-tiny.en` mangles proper nouns (*Manoa* → *Minoa*). That is why every transcript is editable and the summary is only ever a draft.
+- File names are parsed with Samsung's `Call_YYYYMMDD_HHMMSS_<who>` pattern. If the phone ever changes that pattern, the date falls back to the file's timestamp and the caller is looked for as any 10-digit number anywhere in the name.
 - Long-press/drag reordering of jobs does not exist; jobs are ordered by most recent recording.
 - The service worker is network-first for code, so a deploy is picked up on the next load when online, and the cached copy is what you get offline.
 
@@ -128,7 +150,7 @@ Tested on 2026-11-16 in **desktop Chrome on Windows**, 440 × 771 viewport (phon
 
 ## Notes for whoever picks this up
 
-- `tests/sample-call-*.wav` are synthetic (Windows TTS), made only so the import path could be exercised. They are not customer audio.
+- `tests/sample-call-*.wav` are synthetic (Windows TTS), made only so the import path could be exercised. They are not customer audio. `tests/Call_2026…m4a` are the same speech re-encoded to AAC and named like Samsung files, for the caller-ID tests.
 - `tests/mock-openai.py` exists to prove the Summarize request. Delete `tests/` before publishing if you want the repo minimal; the app does not reference it.
 - Bump `CACHE` in `sw.js` when you change app files and want returning visitors to skip a stale fetch.
 - The speech engine is deliberately **not** vendored. `transformers.min.js` contains a random-looking 32-character string (it is a class name next to a minified identifier) that GitHub's push protection reports as a leaked Mistral key, and a vendored copy blocks the push for anyone who forks. The service worker cache gives the same offline behaviour without that problem.

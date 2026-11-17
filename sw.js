@@ -1,9 +1,9 @@
-/* Tide & Tool Voice Log — small offline shell cache.
+﻿/* Tide & Tool Voice Log Ã¢â‚¬â€ small offline shell cache.
    Code and markup are network-first so a deploy is picked up immediately,
    with the cached copy as the offline fallback. Icons are cache-first.
    Audio, transcripts and the speech model never pass through here. */
-var CACHE = 'tide-tool-shell-v3';
-var ENGINE_CACHE = 'tide-tool-engine-v3';
+var CACHE = 'tide-tool-shell-v5';
+var ENGINE_CACHE = 'tide-tool-engine-v5';
 var ENGINE_ORIGIN = 'https://cdn.jsdelivr.net';
 var SHELL = [
   './',
@@ -82,7 +82,7 @@ self.addEventListener('fetch', function (ev) {
   }
 
   ev.respondWith(
-    fetch(req).then(function (res) {
+    fetch(new Request(req, { cache: 'no-cache' })).then(function (res) {
       if (res && res.ok && res.type === 'basic') {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put(req, copy); });

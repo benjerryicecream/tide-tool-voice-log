@@ -15,7 +15,8 @@
     down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0 4.2-4.2M12 15 7.8 10.8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 18.5h15" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
     check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
-    spark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 13.7 9l5.5 1.7-5.5 1.7L12 18l-1.7-5.6L4.8 10.7 10.3 9 12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>'
+    spark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 13.7 9l5.5 1.7-5.5 1.7L12 18l-1.7-5.6L4.8 10.7 10.3 9 12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+    pencil: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m13.5 6.5 4 4" stroke="currentColor" stroke-width="1.7"/></svg>'
   };
 
   var el = {};
@@ -113,6 +114,7 @@
               '<span>' + util.esc(util.stamp(r.createdAt)) + '</span>' +
               '<span class="dot-sep">·</span>' +
               '<span>' + util.duration(r.duration) + '</span>' +
+              (r.kind === 'call' && r.line ? '<span class="dot-sep">·</span><span>' + util.esc(TT.lineShort(r.line)) + '</span>' : '') +
               statusFlag(r) +
             '</span>' +
           '</span>' +
@@ -293,10 +295,29 @@
   function openSave(d) {
     draft = d;
     el.saveTitle.textContent = d.kind === 'call' ? 'Save call recording' : 'Save voice note';
-    el.saveJob.value = lastJobName || '';
+    // Who to credit it to: the matched client, then the name Samsung put in the
+    // file name, and only fall back to the last job when the file says nothing
+    // about the caller (a voice note, or a name-less call file).
+    var prefill = '';
+    if (d.client) prefill = d.client.name;
+    else if (d.contactName) prefill = d.contactName;
+    else if (!d.phone) prefill = lastJobName || '';
+    el.saveJob.value = prefill;
     el.saveWhen.value = util.toLocalInput(d.createdAt);
     el.saveTranscript.value = d.transcript || '';
     el.saveNotes.value = '';
+
+    // line tag: only imported calls carry one
+    if (d.kind === 'call') {
+      el.saveLineField.hidden = false;
+      el.saveLine.innerHTML = TT.LINES.map(function (l) {
+        return '<option value="' + util.esc(l.value) + '"' + ((d.line || TT.DEFAULT_LINE) === l.value ? ' selected' : '') + '>' + util.esc(l.value) + '</option>';
+      }).join('');
+    } else {
+      el.saveLineField.hidden = true;
+    }
+
+    renderSaveMatch(d);
 
     if (d.kind === 'call') {
       el.saveTranscriptNote.textContent = 'not transcribed yet';
@@ -330,12 +351,123 @@
     el.saveConfirm.disabled = !el.saveJob.value.trim();
   }
 
+  /** Who the file says called, and what the phone book makes of it. */
+  function renderSaveMatch(d) {
+    var box = el.saveMatch;
+    if (!box) return;
+    var html = '';
+    if (d.client) {
+      html = '<div class="status-line info"><span>Phone book: <strong>' + util.esc(d.client.name) + '</strong>' +
+        (d.client.phone ? ' · ' + util.esc(d.client.phone) : '') + '</span></div>';
+    } else if (d.phone) {
+      html = '<div class="status-line warn"><span>' + util.esc(util.phonePretty(d.phone)) +
+        ' is not in the phone book.</span><button class="status-act" id="save-add-number">Add as client</button></div>';
+    } else if (d.contactName) {
+      html = '<div class="status-line warn"><span>“' + util.esc(d.contactName) +
+        '” came from the file name and is not in the phone book.</span><button class="status-act" id="save-add-number">Add as client</button></div>';
+    }
+    box.innerHTML = html;
+    box.hidden = !html;
+
+    var add = document.getElementById('save-add-number');
+    if (add) {
+      add.addEventListener('click', function () {
+        openClients({ name: d.contactName || '', phone: d.phone ? util.phonePretty(d.phone) : '' }, function (client) {
+          if (!client) return;
+          d.client = client;
+          d.phone = util.phoneDigits(client.phone);
+          el.saveJob.value = client.name;
+          updateSaveButton();
+          renderSaveMatch(d);
+        });
+      });
+    }
+  }
+
+  /* ---------------------------------------------------------
+     Phone book
+     --------------------------------------------------------- */
+  var clientEditId = null;
+  var clientSavedCb = null;
+
+  function openClients(prefill, onSaved) {
+    clientEditId = null;
+    clientSavedCb = onSaved || null;
+    el.clientName.value = (prefill && prefill.name) || '';
+    el.clientPhone.value = (prefill && prefill.phone) || '';
+    el.clientSave.textContent = 'Add client';
+    el.clientCancelEdit.hidden = true;
+    el.clientPhoneHint.textContent = '';
+    renderClients();
+    openSheet(el.sheetClients);
+    setTimeout(function () {
+      if (!el.clientName.value) el.clientName.focus();
+    }, 320);
+  }
+
+  function renderClients() {
+    var list = store.clients();
+    if (el.pbCount) el.pbCount.textContent = list.length;
+    if (!list.length) {
+      el.clientList.innerHTML = '<p class="client-empty">No clients yet. Add a name and a number here, or add one straight from an imported call.</p>';
+      return;
+    }
+    el.clientList.innerHTML = list.map(function (c) {
+      return '<div class="client-row">' +
+        '<div class="client-main">' +
+          '<div class="client-name">' + util.esc(c.name) + '</div>' +
+          '<div class="client-phone">' + util.esc(c.phone || 'no number') + '</div>' +
+        '</div>' +
+        '<button class="icon-mini" data-cedit="' + util.esc(c.id) + '" aria-label="Edit ' + util.esc(c.name) + '">' + ICON.pencil + '</button>' +
+        '<button class="icon-mini" data-cdel="' + util.esc(c.id) + '" aria-label="Remove ' + util.esc(c.name) + '">' + ICON.x + '</button>' +
+      '</div>';
+    }).join('');
+  }
+
+  function resetClientForm() {
+    clientEditId = null;
+    el.clientName.value = '';
+    el.clientPhone.value = '';
+    el.clientSave.textContent = 'Add client';
+    el.clientCancelEdit.hidden = true;
+  }
+
+  function saveClientForm() {
+    var name = el.clientName.value.replace(/\s+/g, ' ').trim();
+    var phone = el.clientPhone.value.trim();
+    if (!name) {
+      el.clientName.focus();
+      el.clientPhoneHint.textContent = 'A name is needed — the number alone is not enough to match a file name.';
+      return;
+    }
+    var c;
+    if (clientEditId) {
+      c = store.updateClient(clientEditId, { name: name, phone: phone });
+      toast('Client updated');
+    } else {
+      c = store.addClient(name, phone);
+      toast(c && c.phone ? 'Added ' + c.name + ' · ' + c.phone : 'Added ' + name);
+    }
+    resetClientForm();
+    renderClients();
+
+    if (clientSavedCb) {
+      var cb = clientSavedCb;
+      clientSavedCb = null;
+      closeSheet(el.sheetClients);
+      cb(c);
+    }
+  }
+
   function commitSave() {
     var jobName = el.saveJob.value.replace(/\s+/g, ' ').trim();
     if (!jobName) { el.saveJob.focus(); return; }
     if (!draft) return;
 
     var job = store.ensureJob(jobName);
+    var client = draft.client ||
+      store.findClientByName(jobName) ||
+      (draft.phone ? store.findClientByPhone(draft.phone) : null);
     var rec = {
       id: util.uid(),
       jobId: job.id,
@@ -346,6 +478,11 @@
       duration: Math.round(draft.duration || 0),
       mime: draft.mime || '',
       size: draft.blob.size || 0,
+      line: draft.kind === 'call' ? (el.saveLine.value || TT.DEFAULT_LINE) : '',
+      clientId: client ? client.id : '',
+      clientName: client ? client.name : '',
+      clientPhone: client ? client.phone : '',
+      sourceFile: draft.title || '',
       transcript: el.saveTranscript.value.trim(),
       transcriptStatus: el.saveTranscript.value.trim() ? 'done' : (draft.kind === 'call' ? 'pending' : 'none'),
       transcriptSource: el.saveTranscript.value.trim() ? (draft.kind === 'voice' ? 'live' : 'manual') : null,
@@ -405,8 +542,14 @@
     var remaining = importQueue.length;
     toast('Reading ' + file.name + (remaining ? ' (' + remaining + ' more)' : ''));
 
-    var created = file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString();
+    // Call_YYYYMMDD_HHMMSS_<number or name>.m4a — the timestamp beats lastModified
+    var parsed = util.parseCallFile(file.name);
+    var created = parsed.date || (file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString());
     var mime = file.type || 'audio/mp4';
+
+    var client = null;
+    if (parsed.phone) client = store.findClientByPhone(parsed.phone);
+    if (!client && parsed.contactName) client = store.findClientByName(parsed.contactName);
 
     probeDuration(file).then(function (secs) {
       var d = {
@@ -416,13 +559,16 @@
         duration: secs,
         transcript: '',
         createdAt: created,
+        line: TT.DEFAULT_LINE,
+        client: client,
+        phone: parsed.phone || '',
+        contactName: parsed.contactName || '',
+        parsed: parsed,
         liveWorked: false,
         liveNote: 'Imported from ' + file.name,
         title: file.name
       };
-      el.saveTitle.textContent = remaining ? 'Save call recording' : 'Save call recording';
       openSave(d);
-      draft.title = file.name;
       if (remaining) {
         el.saveTitle.textContent = 'Call recording 1 of ' + (remaining + 1);
       }
@@ -531,13 +677,24 @@
 
     var job = store.jobById(rec.jobId);
     var kindLabel = rec.kind === 'call' ? 'Call recording' : 'Voice note';
+    var lineLabel = rec.kind === 'call' ? ' · ' + util.esc(TT.lineShort(rec.line || TT.DEFAULT_LINE)) : '';
+    var lineOptions = TT.LINES.map(function (l) {
+      return '<option value="' + util.esc(l.value) + '"' + ((rec.line || TT.DEFAULT_LINE) === l.value ? ' selected' : '') + '>' + util.esc(l.value) + '</option>';
+    }).join('');
+    var bookRow = rec.clientPhone
+      ? '<div class="detail-book">Phone book: <strong>' + util.esc(rec.clientName || '') + '</strong> · ' + util.esc(rec.clientPhone) + '</div>'
+      : '<div class="detail-book"><button class="link-btn" id="d-add-client">+ Add this client to the phone book</button></div>';
 
     var html =
       '<div class="detail-top">' +
         '<div class="detail-job">' + util.esc(job ? job.name : (rec.jobName || 'Unfiled')) + '</div>' +
-        '<div class="detail-when">' + util.esc(util.stamp(rec.createdAt)) + ' · ' + util.duration(rec.duration) + ' · ' + kindLabel + '</div>' +
+        '<div class="detail-when">' + util.esc(util.stamp(rec.createdAt)) + ' · ' + util.duration(rec.duration) + ' · ' + kindLabel + lineLabel + '</div>' +
+        bookRow +
       '</div>' +
       '<div class="audio-wrap" id="d-audio-wrap"><p class="hint">Loading audio…</p></div>' +
+      (rec.kind === 'call'
+        ? '<div class="field"><label for="d-line">Line</label><select id="d-line" class="input-select">' + lineOptions + '</select></div>'
+        : '') +
       '<div id="detail-status"></div>' +
       '<div id="detail-summary"></div>' +
       '<div class="field">' +
@@ -579,8 +736,48 @@
       }
       detailUrl = URL.createObjectURL(blob);
       wrap.innerHTML = '<audio controls preload="metadata" src="' + detailUrl + '"></audio>' +
-        '<p class="hint" style="margin-top:8px">' + util.bytes(blob.size) + ' · ' + (rec.mime || blob.type || 'audio') + '</p>';
+        '<p class="hint" style="margin-top:8px">' + util.bytes(blob.size) + ' · ' + (rec.mime || blob.type || 'audio') +
+        (rec.sourceFile ? ' · ' + util.esc(rec.sourceFile) : '') + '</p>';
     });
+
+    // line tag and phone-book link
+    var lineSel = document.getElementById('d-line');
+    if (lineSel) {
+      lineSel.addEventListener('change', function () {
+        rec.line = lineSel.value;
+        store.save();
+        var when = document.querySelector('.detail-when');
+        if (when) {
+          when.textContent = util.stamp(rec.createdAt) + ' · ' + util.duration(rec.duration) + ' · ' +
+            (rec.kind === 'call' ? 'Call recording' : 'Voice note') + ' · ' + TT.lineShort(rec.line);
+        }
+        renderLog();
+        toast('Line set to ' + TT.lineShort(rec.line));
+      });
+    }
+
+    var addClient = document.getElementById('d-add-client');
+    if (addClient) {
+      addClient.addEventListener('click', function () {
+        var fromFile = rec.sourceFile ? util.parseCallFile(rec.sourceFile) : null;
+        openClients(
+          { name: job ? job.name : (rec.jobName || ''), phone: (fromFile && fromFile.phone) || '' },
+          function (client) {
+            if (!client) return;
+            rec.clientId = client.id;
+            rec.clientName = client.name;
+            rec.clientPhone = client.phone;
+            store.save();
+            var row = document.querySelector('.detail-book');
+            if (row) {
+              row.innerHTML = 'Phone book: <strong>' + util.esc(client.name) + '</strong> · ' + util.esc(client.phone);
+            }
+            renderLog();
+            toast('Linked to ' + client.name);
+          }
+        );
+      });
+    }
 
     // live-editing
     var t = document.getElementById('d-transcript');
@@ -691,6 +888,7 @@
     el.setModel.value = s.model || '';
     updateAiTag();
     renderStats();
+    if (el.pbCount) el.pbCount.textContent = store.state.clients.length;
     openSheet(el.sheetSettings);
   }
 
@@ -788,6 +986,18 @@
       saveConfirm: document.getElementById('save-confirm'),
       chips: document.getElementById('save-chips'),
       datalist: document.getElementById('jobs-datalist'),
+      saveMatch: document.getElementById('save-match'),
+      saveAddClient: document.getElementById('save-add-client'),
+      saveLineField: document.getElementById('save-line-field'),
+      saveLine: document.getElementById('save-line'),
+      sheetClients: document.getElementById('sheet-clients'),
+      clientName: document.getElementById('client-name'),
+      clientPhone: document.getElementById('client-phone'),
+      clientPhoneHint: document.getElementById('client-phone-hint'),
+      clientSave: document.getElementById('client-save'),
+      clientCancelEdit: document.getElementById('client-cancel-edit'),
+      clientList: document.getElementById('client-list'),
+      pbCount: document.getElementById('pb-count'),
       detailBody: document.getElementById('detail-body'),
       detailTitle: document.getElementById('detail-title'),
       detailExport: document.getElementById('detail-export'),
@@ -861,12 +1071,69 @@
           renderLog();
         } else if (which === 'settings') {
           closeSheet(el.sheetSettings);
+        } else if (which === 'clients') {
+          closeSheet(el.sheetClients);
+          clientSavedCb = null;
+          resetClientForm();
+          el.clientPhoneHint.textContent = '';
         }
       });
     });
 
     el.saveJob.addEventListener('input', updateSaveButton);
     el.saveNow = null;
+
+    el.saveAddClient.addEventListener('click', function () {
+      openClients(
+        { name: el.saveJob.value.trim(), phone: (draft && draft.phone) || '' },
+        function (client) {
+          if (!client) return;
+          if (draft) { draft.client = client; draft.phone = util.phoneDigits(client.phone); }
+          el.saveJob.value = client.name;
+          updateSaveButton();
+          if (draft) renderSaveMatch(draft);
+        }
+      );
+    });
+
+    el.clientSave.addEventListener('click', saveClientForm);
+    el.clientCancelEdit.addEventListener('click', function () {
+      resetClientForm();
+      el.clientPhoneHint.textContent = '';
+    });
+    [el.clientName, el.clientPhone].forEach(function (input) {
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); saveClientForm(); }
+      });
+      input.addEventListener('input', function () { el.clientPhoneHint.textContent = ''; });
+    });
+
+    el.clientList.addEventListener('click', function (e) {
+      var ed = e.target.closest('[data-cedit]');
+      if (ed) {
+        var c = store.clientById(ed.getAttribute('data-cedit'));
+        if (!c) return;
+        clientEditId = c.id;
+        el.clientName.value = c.name;
+        el.clientPhone.value = c.phone || '';
+        el.clientSave.textContent = 'Save changes';
+        el.clientCancelEdit.hidden = false;
+        el.clientName.focus();
+        return;
+      }
+      var del = e.target.closest('[data-cdel]');
+      if (del) {
+        var c2 = store.clientById(del.getAttribute('data-cdel'));
+        if (!c2) return;
+        if (!confirm('Remove ' + c2.name + ' from the phone book? Recordings already saved keep their name and number.')) return;
+        store.deleteClient(c2.id);
+        if (clientEditId === c2.id) resetClientForm();
+        renderClients();
+        toast('Removed from the phone book');
+      }
+    });
+
+    document.getElementById('btn-phonebook').addEventListener('click', function () { openClients(); });
 
     el.chips.addEventListener('click', function (e) {
       var chip = e.target.closest('[data-chip]');
