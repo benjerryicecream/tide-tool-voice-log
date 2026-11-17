@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a1418">
+<meta name="description" content="Tide &amp; Tool Voice Log — a voice work log for a Hawaii handyman. Record job-site notes, import call recordings, keep everything on the device.">
+<title>Tide &amp; Tool — Voice Log</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M2 21c3.2 0 3.2-3 6.4-3s3.2 3 6.4 3 3.2-3 6.4-3 3.2 3 6.4 3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M2 13c3.2 0 3.2-3 6.4-3s3.2 3 6.4 3 3.2-3 6.4-3 3.2 3 6.4 3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity=".45"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">Tide &amp; Tool</span>
+        <span class="brand-sub">Voice work log</span>
+      </div>
+    </div>
+    <button class="icon-btn" id="btn-settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.7a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V20a2 2 0 1 1-4 0v-.11a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06A2 2 0 1 1 4.14 15.9l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.11a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2 2 0 1 1 7.1 4.14l.06.06a1.7 1.7 0 0 0 1.87.34H9.1a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.11a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9.1a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.11a1.7 1.7 0 0 0-1.49 .57Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    </button>
+  </header>
+
+  <main class="main" id="main">
+    <div class="searchbar">
+      <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4.2 4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <input id="search" type="search" autocomplete="off" placeholder="Search jobs, transcripts, notes" aria-label="Search jobs, transcripts and notes">
+      <button class="search-clear" id="search-clear" hidden aria-label="Clear search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="log-meta" id="log-meta"></div>
+    <div id="log-list" class="log-list"></div>
+
+    <div class="empty" id="log-empty" hidden>
+      <svg class="empty-mark" viewBox="0 0 64 40" aria-hidden="true">
+        <path d="M0 26c5.3 0 5.3-5 10.7-5s5.3 5 10.6 5 5.4-5 10.7-5 5.3 5 10.6 5 5.4-5 10.7-5 5.3 5 10.7 5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M0 14c5.3 0 5.3-5 10.7-5s5.3 5 10.6 5 5.4-5 10.7-5 5.3 5 10.6 5 5.4-5 10.7-5 5.3 5 10.7 5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".35"/>
+      </svg>
+      <h2>No recordings yet</h2>
+      <p>Tap <strong>Record voice note</strong> at the bottom and talk. Or import a call recording from your phone.</p>
+    </div>
+  </main>
+
+  <nav class="actionbar" aria-label="Actions">
+    <button class="btn-record" id="btn-record">
+      <span class="btn-record-dot" aria-hidden="true"></span>
+      <span>Record voice note</span>
+    </button>
+    <button class="btn-import" id="btn-import">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4L8 8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      <span>Import call</span>
+    </button>
+    <input type="file" id="file-input" accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.opus,.amr,.3gp,.webm" multiple hidden>
+  </nav>
+</div>
+
+<!-- ============ Recorder ============ -->
+<section class="sheet" id="sheet-recorder" hidden role="dialog" aria-modal="true" aria-label="Record a voice note">
+  <div class="sheet-head">
+    <button class="ghost-btn" data-close="recorder">Cancel</button>
+    <span class="sheet-title">Voice note</span>
+    <span class="sheet-spacer"></span>
+  </div>
+  <div class="rec-body">
+    <div class="rec-timer" id="rec-timer">0:00</div>
+    <div class="meter" id="rec-meter" aria-hidden="true"></div>
+    <p class="rec-status" id="rec-status">Tap the button and start talking.</p>
+    <div class="live" id="rec-live" hidden>
+      <div class="live-head"><span class="pulse"></span>Live transcript</div>
+      <p class="live-text" id="rec-live-text" aria-live="polite"></p>
+    </div>
+    <p class="rec-note" id="rec-note" hidden></p>
+  </div>
+  <div class="rec-foot">
+    <button class="btn-mic" id="rec-toggle" aria-label="Start recording">
+      <svg class="mic-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M12 18v2.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      <span class="stop-square" hidden aria-hidden="true"></span>
+    </button>
+    <div class="rec-foot-label" id="rec-foot-label">Start recording</div>
+  </div>
+</section>
+
+<!-- ============ Save / edit entry ============ -->
+<section class="sheet" id="sheet-save" hidden role="dialog" aria-modal="true" aria-label="Save recording">
+  <div class="sheet-head">
+    <button class="ghost-btn" data-close="save">Cancel</button>
+    <span class="sheet-title" id="save-title">Save recording</span>
+    <span class="sheet-spacer"></span>
+  </div>
+  <div class="sheet-body">
+    <div class="field">
+      <label for="save-job">Client or job</label>
+      <input id="save-job" type="text" list="jobs-datalist" autocomplete="off" placeholder="e.g. Kalani — bathroom re-tile" enterkeyhint="next">
+      <datalist id="jobs-datalist"></datalist>
+      <div class="chips" id="save-chips"></div>
+    </div>
+    <div class="field">
+      <label for="save-when">Date &amp; time</label>
+      <input id="save-when" type="datetime-local">
+    </div>
+    <div class="field">
+      <label for="save-transcript">Transcript <span class="label-note" id="save-transcript-note"></span></label>
+      <textarea id="save-transcript" rows="5" placeholder="Not transcribed yet"></textarea>
+      <p class="hint" id="save-transcript-hint"></p>
+    </div>
+    <div class="field">
+      <label for="save-notes">Notes</label>
+      <textarea id="save-notes" rows="3" placeholder="What you saw, what you quoted, what's next"></textarea>
+    </div>
+  </div>
+  <div class="sheet-foot">
+    <button class="btn-primary" id="save-confirm">Save to log</button>
+  </div>
+</section>
+
+<!-- ============ Detail ============ -->
+<section class="sheet" id="sheet-detail" hidden role="dialog" aria-modal="true" aria-label="Recording detail">
+  <div class="sheet-head">
+    <button class="ghost-btn" data-close="detail">Back</button>
+    <span class="sheet-title" id="detail-title">Recording</span>
+    <button class="ghost-btn" id="detail-export">Export .txt</button>
+  </div>
+  <div class="sheet-body" id="detail-body"></div>
+</section>
+
+<!-- ============ Settings ============ -->
+<section class="sheet" id="sheet-settings" hidden role="dialog" aria-modal="true" aria-label="Settings">
+  <div class="sheet-head">
+    <button class="ghost-btn" data-close="settings">Done</button>
+    <span class="sheet-title">Settings</span>
+    <span class="sheet-spacer"></span>
+  </div>
+  <div class="sheet-body">
+    <section class="block">
+      <h3>AI summary <span class="tag" id="ai-state">off</span></h3>
+      <p class="block-lede">Optional. The app works completely without it. If you fill these in, the <strong>Summarize</strong> button on a recording sends that recording's transcript to this endpoint, using your key. Nothing else is ever sent.</p>
+      <div class="field">
+        <label for="set-base">Base URL</label>
+        <input id="set-base" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://api.openai.com/v1">
+      </div>
+      <div class="field">
+        <label for="set-key">API key</label>
+        <input id="set-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…">
+        <span class="hint">Stored in this browser only. Anyone with this phone can read it.</span>
+      </div>
+      <div class="field">
+        <label for="set-model">Model</label>
+        <input id="set-model" type="text" autocomplete="off" spellcheck="false" placeholder="gpt-4o-mini">
+      </div>
+      <button class="btn-secondary" id="set-save">Save settings</button>
+    </section>
+
+    <section class="block">
+      <h3>Backup</h3>
+      <p class="block-lede">Everything lives on this device. Move it to a new phone with a JSON file.</p>
+      <label class="checkline">
+        <input type="checkbox" id="set-include-audio">
+        <span>Include audio in the backup file <em>(much larger)</em></span>
+      </label>
+      <div class="btn-row">
+        <button class="btn-secondary" id="btn-export-json">Export log (.json)</button>
+        <button class="btn-secondary" id="btn-import-json">Import log</button>
+      </div>
+      <input type="file" id="import-json-input" accept="application/json,.json" hidden>
+    </section>
+
+    <section class="block">
+      <h3>On this device</h3>
+      <dl class="stats" id="set-stats"></dl>
+      <p class="hint" id="storage-note"></p>
+    </section>
+
+    <section class="block">
+      <h3>Privacy</h3>
+      <ul class="plain-list">
+        <li>Recordings and transcripts are stored on this device only.</li>
+        <li>Call files are transcribed locally in the browser. The audio never uploads.</li>
+        <li>Two exceptions, both visible: the speech model is downloaded once from Hugging Face, and <strong>Summarize</strong> sends one transcript to the endpoint you configured.</li>
+      </ul>
+    </section>
+
+    <section class="block">
+      <h3>Danger zone</h3>
+      <div class="btn-row">
+        <button class="btn-danger" id="btn-clear-all">Delete all recordings</button>
+      </div>
+    </section>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="js/core.js"></script>
+<script src="js/recorder.js"></script>
+<script src="js/whisper.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
